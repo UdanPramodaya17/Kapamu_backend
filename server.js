@@ -22,6 +22,7 @@ const earningsRoutes = require('./routes/earnings.routes');
 const paymentRoutes = require('./routes/payment.routes');
 const reviewRoutes = require('./routes/review.routes');
 const notificationRoutes = require('./routes/notification.routes');
+const aiRoutes = require('./routes/ai.routes');
 
 // Connect to MongoDB
 connectDB();
@@ -85,6 +86,7 @@ app.use('/api/earnings', earningsRoutes);
 app.use('/api/payment', paymentRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/ai', aiRoutes);
 
 // Health Check
 app.get('/api/health', (req, res) => {
