@@ -181,7 +181,7 @@ const getMyAppointments = async (req, res, next) => {
       .populate({ path: 'barber', populate: { path: 'user', select: 'name avatar' } })
       .populate('service', 'name duration price')
       .populate('saloon', 'name address images')
-      .sort({ date: -1 })
+      .sort({ date: -1, createdAt: -1 })
       .skip((Number(page) - 1) * Number(limit))
       .limit(Number(limit));
 
