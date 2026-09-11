@@ -9,7 +9,7 @@ const {
   getSaloonSetupPasswordEmail,
   getPasswordResetEmail,
 } = require('../utils/emailTemplates');
-const { getTransporter } = require('../utils/email');
+const { sendEmail } = require('../utils/email');
 
 // Google Auth Client Setup
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
@@ -202,20 +202,16 @@ const sendVerificationCode = async (req, res, next) => {
 
     otpStore.set(email, { otp, expires: Date.now() + 10 * 60 * 1000 }); // Save with 10 mins expiry
 
-    const transporter = getTransporter();
-    const fromUser = (process.env.EMAIL_USER || process.env.SMTP_USER || 'noreply@kapamu.com').trim();
-
-    await transporter.sendMail({
-      from: `KAPAMU <${fromUser}>`,
-      to: email,
+    await sendEmail({
+      email,
       subject: 'KAPAMU — Your Security Verification Code',
-      html: getVerificationOtpEmail(otp)
+      html: getVerificationOtpEmail(otp),
     });
 
     console.log(`[OTP] Verification code sent successfully to ${email}`);
     return sendSuccess(res, 200, `Verification code sent to ${email}`);
   } catch (err) {
-    console.error('[OTP Error] Failed to send verification code:', err);
+    console.error('[OTP Error] Failed to send verification code:', err.message || err);
     next(err);
   }
 };
@@ -248,19 +244,15 @@ const sendSetupPassword = async (req, res, next) => {
     const setupToken = jwt.sign({ email }, process.env.JWT_SECRET, { expiresIn: '24h' });
     const setupLink = `${process.env.CLIENT_URL}/set-password?token=${setupToken}`;
 
-    const transporter = getTransporter();
-    const fromUser = (process.env.EMAIL_USER || process.env.SMTP_USER || 'noreply@kapamu.com').trim();
-
-    await transporter.sendMail({
-      from: `KAPAMU <${fromUser}>`,
-      to: email,
+    await sendEmail({
+      email,
       subject: 'KAPAMU — Set Up Your Saloon Admin Account Password',
-      html: getSaloonSetupPasswordEmail(setupLink, user.name)
+      html: getSaloonSetupPasswordEmail(setupLink, user.name),
     });
 
     return sendSuccess(res, 200, 'Setup password email sent.');
   } catch (err) {
-    console.error('[Setup Password Error]:', err);
+    console.error('[Setup Password Error]:', err.message || err);
     next(err);
   }
 };
@@ -334,19 +326,15 @@ const forgotPassword = async (req, res, next) => {
     const resetToken = jwt.sign({ email }, process.env.JWT_SECRET, { expiresIn: '1h' });
     const resetLink = `${process.env.CLIENT_URL}/reset-password?token=${resetToken}`;
 
-    const transporter = getTransporter();
-    const fromUser = (process.env.EMAIL_USER || process.env.SMTP_USER || 'noreply@kapamu.com').trim();
-
-    await transporter.sendMail({
-      from: `KAPAMU <${fromUser}>`,
-      to: email,
+    await sendEmail({
+      email,
       subject: 'KAPAMU — Password Reset Request',
-      html: getPasswordResetEmail(resetLink)
+      html: getPasswordResetEmail(resetLink),
     });
 
     return sendSuccess(res, 200, 'Password reset link sent to your email.');
   } catch (err) {
-    console.error('[Forgot Password Error]:', err);
+    console.error('[Forgot Password Error]:', err.message || err);
     next(err);
   }
 };
