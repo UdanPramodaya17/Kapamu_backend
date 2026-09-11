@@ -9,18 +9,10 @@ const {
   getSaloonSetupPasswordEmail,
   getPasswordResetEmail,
 } = require('../utils/emailTemplates');
+const { getTransporter } = require('../utils/email');
 
 // Google Auth Client Setup
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
-
-// Nodemailer Transport Setup
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-});
 
 // Temporary memory store for OTPs (For production, use Redis or a Mongoose model)
 const otpStore = new Map();
@@ -200,22 +192,30 @@ const googleAuth = async (req, res, next) => {
 };
 
 // POST /api/auth/send-verification
+// POST /api/auth/send-verification
 const sendVerificationCode = async (req, res, next) => {
   try {
     const { email } = req.body;
+    if (!email) return sendError(res, 400, 'Email is required.');
+
     const otp = Math.floor(100000 + Math.random() * 900000).toString(); // Generate 6 digit OTP
 
     otpStore.set(email, { otp, expires: Date.now() + 10 * 60 * 1000 }); // Save with 10 mins expiry
 
+    const transporter = getTransporter();
+    const fromUser = (process.env.EMAIL_USER || process.env.SMTP_USER || 'noreply@kapamu.com').trim();
+
     await transporter.sendMail({
-      from: `KAPAMU <${process.env.EMAIL_USER}>`,
+      from: `KAPAMU <${fromUser}>`,
       to: email,
       subject: 'KAPAMU — Your Security Verification Code',
       html: getVerificationOtpEmail(otp)
     });
 
+    console.log(`[OTP] Verification code sent successfully to ${email}`);
     return sendSuccess(res, 200, `Verification code sent to ${email}`);
   } catch (err) {
+    console.error('[OTP Error] Failed to send verification code:', err);
     next(err);
   }
 };
@@ -248,8 +248,11 @@ const sendSetupPassword = async (req, res, next) => {
     const setupToken = jwt.sign({ email }, process.env.JWT_SECRET, { expiresIn: '24h' });
     const setupLink = `${process.env.CLIENT_URL}/set-password?token=${setupToken}`;
 
+    const transporter = getTransporter();
+    const fromUser = (process.env.EMAIL_USER || process.env.SMTP_USER || 'noreply@kapamu.com').trim();
+
     await transporter.sendMail({
-      from: `KAPAMU <${process.env.EMAIL_USER}>`,
+      from: `KAPAMU <${fromUser}>`,
       to: email,
       subject: 'KAPAMU — Set Up Your Saloon Admin Account Password',
       html: getSaloonSetupPasswordEmail(setupLink, user.name)
@@ -257,6 +260,7 @@ const sendSetupPassword = async (req, res, next) => {
 
     return sendSuccess(res, 200, 'Setup password email sent.');
   } catch (err) {
+    console.error('[Setup Password Error]:', err);
     next(err);
   }
 };
@@ -330,8 +334,11 @@ const forgotPassword = async (req, res, next) => {
     const resetToken = jwt.sign({ email }, process.env.JWT_SECRET, { expiresIn: '1h' });
     const resetLink = `${process.env.CLIENT_URL}/reset-password?token=${resetToken}`;
 
+    const transporter = getTransporter();
+    const fromUser = (process.env.EMAIL_USER || process.env.SMTP_USER || 'noreply@kapamu.com').trim();
+
     await transporter.sendMail({
-      from: `KAPAMU <${process.env.EMAIL_USER}>`,
+      from: `KAPAMU <${fromUser}>`,
       to: email,
       subject: 'KAPAMU — Password Reset Request',
       html: getPasswordResetEmail(resetLink)
@@ -339,8 +346,10 @@ const forgotPassword = async (req, res, next) => {
 
     return sendSuccess(res, 200, 'Password reset link sent to your email.');
   } catch (err) {
+    console.error('[Forgot Password Error]:', err);
     next(err);
   }
 };
 
 module.exports = { register, login, refresh, logout, getMe, googleAuth, sendVerificationCode, verifyCode, sendSetupPassword, setNewPassword, updateProfile, updatePassword, forgotPassword };
+
