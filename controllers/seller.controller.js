@@ -2,7 +2,7 @@ const Seller = require('../models/Seller');
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
 const { getSellerSetupPasswordEmail } = require('../utils/emailTemplates');
-const { getTransporter } = require('../utils/email');
+const { sendEmail } = require('../utils/email');
 
 exports.createSeller = async (req, res) => {
   try {
@@ -39,12 +39,8 @@ exports.createSeller = async (req, res) => {
       const setupToken = jwt.sign({ email }, process.env.JWT_SECRET, { expiresIn: '48h' });
       const setupLink = `${process.env.CLIENT_URL}/set-password?token=${setupToken}`;
 
-      const transporter = getTransporter();
-      const fromUser = (process.env.EMAIL_USER || process.env.SMTP_USER || 'noreply@kapamu.com').trim();
-
-      await transporter.sendMail({
-        from: `KAPAMU <${fromUser}>`,
-        to: email,
+      await sendEmail({
+        email,
         subject: 'KAPAMU Marketplace — Your Seller Account is Ready',
         html: getSellerSetupPasswordEmail(setupLink, name, storeName),
       });
