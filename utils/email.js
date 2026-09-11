@@ -15,6 +15,9 @@ const getTransporter = () => {
     tls: {
       rejectUnauthorized: false,
     },
+    connectionTimeout: 5000, // 5s timeout to prevent hanging on cloud hosts
+    greetingTimeout: 5000,
+    socketTimeout: 5000,
   });
 };
 
@@ -50,11 +53,11 @@ const sendEmail = async (options) => {
       return resData;
     } catch (resendError) {
       console.error('[Email Resend Error]:', resendError.message);
-      // Fall through to SMTP fallback if Resend fails
+      throw resendError;
     }
   }
 
-  // 2. Fallback: SMTP via Gmail
+  // 2. Fallback: SMTP via Gmail (Works in localhost, blocked on Render free tier)
   try {
     console.log(`[Email] Sending to ${options.email} via Gmail SMTP...`);
     const transporter = getTransporter();
@@ -80,5 +83,6 @@ module.exports = {
   getTransporter,
   sendEmail,
 };
+
 
 
