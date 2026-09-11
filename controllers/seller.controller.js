@@ -1,16 +1,8 @@
 const Seller = require('../models/Seller');
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
-const nodemailer = require('nodemailer');
 const { getSellerSetupPasswordEmail } = require('../utils/emailTemplates');
-
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-});
+const { getTransporter } = require('../utils/email');
 
 exports.createSeller = async (req, res) => {
   try {
@@ -47,8 +39,11 @@ exports.createSeller = async (req, res) => {
       const setupToken = jwt.sign({ email }, process.env.JWT_SECRET, { expiresIn: '48h' });
       const setupLink = `${process.env.CLIENT_URL}/set-password?token=${setupToken}`;
 
+      const transporter = getTransporter();
+      const fromUser = (process.env.EMAIL_USER || process.env.SMTP_USER || 'noreply@kapamu.com').trim();
+
       await transporter.sendMail({
-        from: `KAPAMU <${process.env.EMAIL_USER}>`,
+        from: `KAPAMU <${fromUser}>`,
         to: email,
         subject: 'KAPAMU Marketplace — Your Seller Account is Ready',
         html: getSellerSetupPasswordEmail(setupLink, name, storeName),
