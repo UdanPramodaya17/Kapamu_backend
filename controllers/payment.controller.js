@@ -258,14 +258,15 @@ const verifyPayment = async (req, res, next) => {
 
     if (!order) return sendError(res, 404, 'Order not found.');
 
-    // Local Development Bypass:
-    // When running locally on localhost, PayHere's public notify webhook cannot reach our local server.
-    // We automatically simulate/confirm payment success in development mode when the verify endpoint is polled.
-    if (process.env.NODE_ENV === 'development' && order.paymentStatus === 'unpaid') {
-      console.log(`[PayHere Bypass] Auto-confirming payment in development for order: ${payhereOrderId}`);
+    // Development & Sandbox Confirmation:
+    // When running in sandbox mode or locally, PayHere IPN notify webhooks can be delayed or blocked on free cloud servers.
+    // If PAYHERE_MODE is 'sandbox' or NODE_ENV is 'development', confirm the payment upon successful return.
+    const isSandboxMode = process.env.PAYHERE_MODE === 'sandbox' || process.env.NODE_ENV === 'development';
+    if (isSandboxMode && order.paymentStatus === 'unpaid') {
+      console.log(`[PayHere Sandbox/Dev] Confirming payment for order: ${payhereOrderId}`);
       
       order.paymentStatus = 'paid';
-      order.payherePaymentId = `DEV-MOCK-${Date.now()}`;
+      order.payherePaymentId = `SANDBOX-${Date.now()}`;
       await order.save();
 
       // Create VendorEarning records
