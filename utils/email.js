@@ -15,16 +15,50 @@ const getTransporter = () => {
     tls: {
       rejectUnauthorized: false,
     },
-    connectionTimeout: 5000, // 5s timeout to prevent hanging on cloud hosts
+    connectionTimeout: 5000,
     greetingTimeout: 5000,
     socketTimeout: 5000,
   });
 };
 
 const sendEmail = async (options) => {
+  const brevoApiKey = process.env.BREVO_API_KEY?.trim();
   const resendApiKey = process.env.RESEND_API_KEY?.trim();
+  const senderEmail = (process.env.EMAIL_USER || process.env.SMTP_USER || 'noreply@kapamu.com').trim();
 
-  // 1. If RESEND_API_KEY is available, send via Resend HTTPS API (Port 443 - Never blocked on Render)
+  // 1. Brevo HTTPS API (Best for sending to ANY email address without domain verification - 300 free/day)
+  if (brevoApiKey) {
+    try {
+      console.log(`[Email] Sending to ${options.email} via Brevo HTTPS API...`);
+      const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        headers: {
+          'accept': 'application/json',
+          'api-key': brevoApiKey,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          sender: { name: 'KAPAMU', email: senderEmail },
+          to: [{ email: options.email }],
+          subject: options.subject,
+          htmlContent: options.html,
+        }),
+      });
+
+      const resData = await response.json();
+      if (!response.ok) {
+        throw new Error(resData.message || `Brevo Error (${response.status})`);
+      }
+
+      console.log(`[Email] Successfully sent to ${options.email} via Brevo (MessageId: ${resData.messageId})`);
+      return resData;
+    } catch (brevoError) {
+      console.error('[Email Brevo Error]:', brevoError.message);
+      // Fall through to other providers if Brevo fails
+    }
+  }
+
+  // 2. Resend HTTPS API (Works over Port 443)
   if (resendApiKey) {
     try {
       console.log(`[Email] Sending to ${options.email} via Resend HTTPS API...`);
@@ -53,18 +87,16 @@ const sendEmail = async (options) => {
       return resData;
     } catch (resendError) {
       console.error('[Email Resend Error]:', resendError.message);
-      throw resendError;
     }
   }
 
-  // 2. Fallback: SMTP via Gmail (Works in localhost, blocked on Render free tier)
+  // 3. Fallback: SMTP via Gmail (Works on localhost)
   try {
     console.log(`[Email] Sending to ${options.email} via Gmail SMTP...`);
     const transporter = getTransporter();
-    const fromUser = (process.env.EMAIL_USER || process.env.SMTP_USER || 'noreply@kapamu.com').trim();
 
     const mailOptions = {
-      from: `KAPAMU <${fromUser}>`,
+      from: `KAPAMU <${senderEmail}>`,
       to: options.email,
       subject: options.subject,
       html: options.html,
@@ -83,6 +115,7 @@ module.exports = {
   getTransporter,
   sendEmail,
 };
+
 
 
 

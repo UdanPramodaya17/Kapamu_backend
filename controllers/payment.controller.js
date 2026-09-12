@@ -5,13 +5,12 @@ const VendorEarning = require('../models/VendorEarning');
 const PlatformSettings = require('../models/PlatformSettings');
 const { sendSuccess, sendError } = require('../utils/response');
 
-const MERCHANT_ID = process.env.PAYHERE_MERCHANT_ID;
-const MERCHANT_SECRET = process.env.PAYHERE_MERCHANT_SECRET || '';
-const MODE = process.env.PAYHERE_MODE || 'sandbox';
+const getMerchantId = () => (process.env.PAYHERE_MERCHANT_ID || '1235098').replace(/['"]/g, '').trim();
+const getMerchantSecret = () => (process.env.PAYHERE_MERCHANT_SECRET || 'MTY2MzMwNzczNDc5Mjk5Nzg3MzIzMTY5MjQ2MzE3NjkwNzcyMTc=').replace(/['"]/g, '').trim();
+const getMode = () => (process.env.PAYHERE_MODE || 'sandbox').trim().toLowerCase();
 
-// PayHere URLs
-const PAYHERE_CHECKOUT_URL =
-  MODE === 'production'
+const getCheckoutUrl = () =>
+  getMode() === 'production'
     ? 'https://www.payhere.lk/pay/checkout'
     : 'https://sandbox.payhere.lk/pay/checkout';
 
@@ -20,25 +19,18 @@ const PAYHERE_CHECKOUT_URL =
  * hash = MD5(merchant_id + order_id + amount_formatted + currency + MD5(secret).toUpperCase()).toUpperCase()
  */
 function generateHash(orderId, amount, currency = 'LKR') {
+  const secret = getMerchantSecret();
+  const merchantId = getMerchantId();
+
   const hashedSecret = crypto
     .createHash('md5')
-    .update(MERCHANT_SECRET)
+    .update(secret)
     .digest('hex')
     .toUpperCase();
 
   const formattedAmount = parseFloat(amount).toFixed(2);
-  const raw = `${MERCHANT_ID}${orderId}${formattedAmount}${currency}${hashedSecret}`;
+  const raw = `${merchantId}${orderId}${formattedAmount}${currency}${hashedSecret}`;
   const hash = crypto.createHash('md5').update(raw).digest('hex').toUpperCase();
-
-  console.log('--- PAYHERE HASH GENERATION DEBUG ---');
-  console.log(`MERCHANT_ID: "${MERCHANT_ID}"`);
-  console.log(`MERCHANT_SECRET (first 5 chars): "${MERCHANT_SECRET.slice(0, 5)}... (${MERCHANT_SECRET.length} chars)"`);
-  console.log(`orderId: "${orderId}"`);
-  console.log(`formattedAmount: "${formattedAmount}"`);
-  console.log(`currency: "${currency}"`);
-  console.log(`raw string: "${raw}"`);
-  console.log(`final hash: "${hash}"`);
-  console.log('------------------------------------');
 
   return hash;
 }
@@ -48,14 +40,17 @@ function generateHash(orderId, amount, currency = 'LKR') {
  * md5sig = MD5(merchant_id + order_id + amount + currency + status + MD5(secret).toUpperCase()).toUpperCase()
  */
 function verifyNotifyHash(orderId, amount, currency, statusCode, receivedMd5) {
+  const secret = getMerchantSecret();
+  const merchantId = getMerchantId();
+
   const hashedSecret = crypto
     .createHash('md5')
-    .update(MERCHANT_SECRET)
+    .update(secret)
     .digest('hex')
     .toUpperCase();
 
   const formattedAmount = parseFloat(amount).toFixed(2);
-  const raw = `${MERCHANT_ID}${orderId}${formattedAmount}${currency}${statusCode}${hashedSecret}`;
+  const raw = `${merchantId}${orderId}${formattedAmount}${currency}${statusCode}${hashedSecret}`;
   const expected = crypto.createHash('md5').update(raw).digest('hex').toUpperCase();
   return expected === receivedMd5?.toUpperCase();
 }
@@ -115,12 +110,15 @@ const initiatePayment = async (req, res, next) => {
     // Generate PayHere hash
     const hash = generateHash(payhereOrderId, totalAmount);
 
+    const clientUrl = (process.env.CLIENT_URL || req.headers.origin || 'http://localhost:5173').replace(/\/$/, '');
+    const serverUrl = (process.env.SERVER_URL || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
+
     // Build PayHere params to send to frontend with fallback defaults
     const paymentParams = {
-      merchant_id: MERCHANT_ID,
-      return_url: `${process.env.CLIENT_URL}/payment/return`,
-      cancel_url: `${process.env.CLIENT_URL}/payment/cancel`,
-      notify_url: `${process.env.SERVER_URL || 'http://localhost:5000'}/api/payment/notify`,
+      merchant_id: getMerchantId(),
+      return_url: `${clientUrl}/payment/return`,
+      cancel_url: `${clientUrl}/payment/cancel`,
+      notify_url: `${serverUrl}/api/payment/notify`,
       order_id: payhereOrderId,
       items: enrichedItems.map((i) => i.name).join(', '),
       currency: 'LKR',
@@ -133,7 +131,7 @@ const initiatePayment = async (req, res, next) => {
       city: shippingAddress.city || 'Colombo',
       country: 'Sri Lanka',
       hash,
-      checkout_url: PAYHERE_CHECKOUT_URL,
+      checkout_url: getCheckoutUrl(),
     };
 
     return sendSuccess(res, 200, 'Payment initiated.', {
@@ -258,14 +256,15 @@ const verifyPayment = async (req, res, next) => {
 
     if (!order) return sendError(res, 404, 'Order not found.');
 
-    // Local Development Bypass:
-    // When running locally on localhost, PayHere's public notify webhook cannot reach our local server.
-    // We automatically simulate/confirm payment success in development mode when the verify endpoint is polled.
-    if (process.env.NODE_ENV === 'development' && order.paymentStatus === 'unpaid') {
-      console.log(`[PayHere Bypass] Auto-confirming payment in development for order: ${payhereOrderId}`);
+    // Development & Sandbox Confirmation:
+    // When running in sandbox mode or locally, PayHere IPN notify webhooks can be delayed or blocked on free cloud servers.
+    // If PAYHERE_MODE is 'sandbox' or NODE_ENV is 'development', confirm the payment upon successful return.
+    const isSandboxMode = process.env.PAYHERE_MODE === 'sandbox' || process.env.NODE_ENV === 'development';
+    if (isSandboxMode && order.paymentStatus === 'unpaid') {
+      console.log(`[PayHere Sandbox/Dev] Confirming payment for order: ${payhereOrderId}`);
       
       order.paymentStatus = 'paid';
-      order.payherePaymentId = `DEV-MOCK-${Date.now()}`;
+      order.payherePaymentId = `SANDBOX-${Date.now()}`;
       await order.save();
 
       // Create VendorEarning records
